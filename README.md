@@ -67,6 +67,21 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
 `database_id` 不是秘密，可以提交到 GitHub。`AUTH_PEPPER`、Cloudflare API Token、`.dev.vars*`、D1 导出和用户数据都不能提交。
 
+### 配置分层：哪些放环境变量，哪些放 Wrangler 配置
+
+不要把所有配置都塞进环境变量。它们的用途不同：
+
+| 配置 | 正确位置 | 是否秘密 | 原因 |
+| --- | --- | --- | --- |
+| `database_id` | `wrangler.toml` 的 D1 binding | 否 | 它是 Wrangler 在部署时解析 D1 绑定的资源 ID，不是 Worker 运行时变量 |
+| `database_name`、Worker `name`、`compatibility_date` | `wrangler.toml` | 否 | 属于部署配置，便于代码审查和复现 |
+| `CLOUDFLARE_ACCOUNT_ID` | GitHub `production` Environment secret，或本地环境变量 | 否，但建议不公开 | Wrangler 登录目标账号所需的 CI 参数 |
+| `CLOUDFLARE_API_TOKEN` | GitHub `production` Environment secret | 是 | Wrangler 部署凭据，不能提交到仓库 |
+| `AUTH_PEPPER` | Cloudflare Worker Secret（Dashboard 或 `wrangler secret put`） | 是 | Worker 运行时使用的认证密钥，不应传入普通构建变量 |
+| `SESSION_TTL_SECONDS` | `wrangler.toml` 的 `[vars]` | 否 | 普通 Worker 运行时配置 |
+
+`wrangler.toml` 不会自动把 `database_id = "$D1_DATABASE_ID"` 替换成 Shell 或 GitHub 环境变量。若强行采用环境变量，需要在 CI 中额外生成临时 Wrangler 配置文件，再通过 `--config` 部署；这会增加模板、校验和本地/CI 漂移的复杂度。单生产环境直接提交 `database_id` 是更可复现的做法。需要多个环境时，应使用 Wrangler 的 `[env.production]`、`[env.staging]` 等配置块，为每个环境绑定各自的 D1 ID。
+
 ## 4. 前置条件
 
 需要准备：
