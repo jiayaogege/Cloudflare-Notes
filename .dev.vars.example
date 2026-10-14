@@ -1,0 +1,18 @@
+# Local development secrets for `wrangler dev`.
+#
+# Copy this file to `.dev.vars` and replace every placeholder. Never commit
+# `.dev.vars`; Wrangler loads it only for local development.
+
+# 32+ random bytes encoded as base64url. This server-only pepper is mixed into
+# the client-derived authentication verifier before storing its SHA-256 hash.
+# Generate with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+AUTH_PEPPER=replace-with-32-byte-base64url-secret
+
+# Session lifetime is configured as a non-secret Worker variable in
+# wrangler.toml. The current default is 604800 seconds (7 days).
+
+# The following values are documentation-only reminders. D1 bindings belong
+# in wrangler.toml and are not secrets.
+# D1_DATABASE_NAME=cloudflare-private-notes
+# D1_DATABASE_ID=replace-after-wrangler-d1-create

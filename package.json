@@ -1,0 +1,24 @@
+{
+  "name": "cloudflare-private-notes",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply cloudflare-private-notes --local",
+    "db:migrate:remote": "wrangler d1 migrations apply cloudflare-private-notes --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261014.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "wrangler": "^4.151.0"
+  }
+}
