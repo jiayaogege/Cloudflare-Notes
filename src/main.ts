@@ -27,6 +27,7 @@ if ("serviceWorker" in navigator) {
 
 type AuthMode = "login" | "register";
 type EditorMode = "edit" | "preview";
+type Theme = "system" | "light" | "dark";
 
 interface AppState {
   session: Session | null;
@@ -43,6 +44,31 @@ interface AppState {
   syncing: boolean;
   busy: boolean;
   cursor: number;
+  theme: Theme;
+}
+
+const THEME_STORAGE_KEY = "private-notes:theme";
+const themeMedia = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+function readTheme(): Theme {
+  try {
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
+    return value === "light" || value === "dark" || value === "system" ? value : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function resolvedTheme(theme: Theme): "light" | "dark" {
+  if (theme !== "system") return theme;
+  return themeMedia?.matches ? "dark" : "light";
+}
+
+function applyTheme(): void {
+  const actualTheme = resolvedTheme(state.theme);
+  document.documentElement.dataset.theme = actualTheme;
+  document.documentElement.dataset.themePreference = state.theme;
+  document.documentElement.style.colorScheme = actualTheme;
 }
 
 const state: AppState = {
@@ -59,11 +85,24 @@ const state: AppState = {
   pending: 0,
   syncing: false,
   busy: false,
-  cursor: 0
+  cursor: 0,
+  theme: readTheme()
 };
 
 let saveTimer: number | undefined;
 const MAX_NOTE_BODY_CHARS = 350_000;
+
+applyTheme();
+if (themeMedia) {
+  const handleThemeChange = () => {
+    if (state.theme === "system") applyTheme();
+  };
+  const media = themeMedia as MediaQueryList & {
+    addListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+  };
+  if (typeof media.addEventListener === "function") media.addEventListener("change", handleThemeChange);
+  else media.addListener?.(handleThemeChange);
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -111,6 +150,10 @@ function renderMarkdown(markdown: string): string {
     safe = safe.replace(/__([^_]+)__/g, "<strong>$1</strong>");
     safe = safe.replace(/\*([^*]+)\*/g, "<em>$1</em>");
     safe = safe.replace(/_([^_]+)_/g, "<em>$1</em>");
+    safe = safe.replace(
+      /\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
     return safe;
   };
   for (const line of lines) {
@@ -154,8 +197,9 @@ function renderMarkdown(markdown: string): string {
 
 function setStatus(message: string): void {
   state.status = message;
-  const element = document.querySelector<HTMLElement>(".status-text");
-  if (element) element.textContent = message;
+  document.querySelectorAll<HTMLElement>(".status-text").forEach((element) => {
+    element.textContent = message;
+  });
 }
 
 function showToast(message: string, kind: "info" | "error" = "info"): void {
@@ -191,6 +235,39 @@ function categories(): string[] {
   return [...new Set([...state.notes.values()].map((note) => note.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
+function themeOptions(): string {
+  return [
+    ["system", "跟随系统"],
+    ["light", "浅色"],
+    ["dark", "深色"]
+  ]
+    .map(([value, label]) => `<option value="${value}" ${state.theme === value ? "selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function renderThemePicker(className = ""): string {
+  return `
+    <label class="theme-picker ${className}">
+      <span class="sr-only">界面主题</span>
+      <select id="theme-select" aria-label="界面主题">${themeOptions()}</select>
+    </label>`;
+}
+
+function wireThemePicker(): void {
+  const picker = app.querySelector("#theme-select") as HTMLSelectElement | null;
+  picker?.addEventListener("change", (event: Event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value !== "system" && value !== "light" && value !== "dark") return;
+    state.theme = value;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, value);
+    } catch {
+      // A private browsing context may reject localStorage; the in-memory preference still applies.
+    }
+    applyTheme();
+  });
+}
+
 function renderAuth(): void {
   app.innerHTML = `
     <main class="auth-layout">
@@ -206,6 +283,7 @@ function renderAuth(): void {
         </div>
       </section>
       <section class="auth-panel">
+        ${renderThemePicker("auth-theme-picker")}
         <div class="auth-tabs" role="tablist">
           <button class="${state.authMode === "login" ? "active" : ""}" data-auth-mode="login">登录</button>
           <button class="${state.authMode === "register" ? "active" : ""}" data-auth-mode="register">创建账户</button>
@@ -225,6 +303,7 @@ function renderAuth(): void {
         <p class="auth-note">忘记主密码无法由服务器恢复明文。请在进入后导出加密备份，并把恢复信息保存在离线位置。</p>
       </section>
     </main>`;
+  wireThemePicker();
   app.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       state.authMode = button.dataset.authMode as AuthMode;
@@ -274,6 +353,7 @@ function renderApp(): void {
           <span class="connection-pill ${state.online ? "online" : "offline"}"><i></i>${state.online ? "在线" : "离线"}</span>
           <span class="status-text">${escapeHtml(state.status || (state.pending ? `待同步 ${state.pending} 项` : "已同步"))}</span>
           <button class="icon-button" id="export-button" title="导出加密备份" aria-label="导出加密备份">⇩</button>
+          ${renderThemePicker()}
           <button class="ghost-button" id="logout-button">退出</button>
         </div>
       </header>
@@ -283,12 +363,7 @@ function renderApp(): void {
           <div class="search-wrap"><span>⌕</span><input id="search-input" value="${escapeHtml(state.search)}" placeholder="搜索已解密内容…" /></div>
           <select id="category-filter" class="category-filter"><option value="">所有分类</option>${categoryOptions}</select>
           <div class="note-count">${list.length} 条笔记${state.pending ? ` · ${state.pending} 项待同步` : ""}</div>
-          <div class="note-list">${list.length ? list.map((note) => `
-            <button class="note-row ${note.id === state.selectedId ? "selected" : ""}" data-note-id="${note.id}">
-              <span class="note-row-title">${escapeHtml(note.title || "未命名笔记")}</span>
-              <span class="note-row-preview">${escapeHtml(notePreview(note))}</span>
-              <span class="note-row-meta">${note.category ? escapeHtml(note.category) : "未分类"} · ${formatDate(note.updatedAt)}</span>
-            </button>`).join("") : '<div class="empty-list"><span>✦</span><p>还没有匹配的笔记</p><small>点击右上角 ＋ 创建第一条</small></div>'}</div>
+          <div class="note-list">${renderNoteList(list)}</div>
         </aside>
         <main class="editor-area">
           ${selected ? renderEditor(selected) : renderEmptyEditor()}
@@ -296,7 +371,20 @@ function renderApp(): void {
       </div>
       <div id="toast" class="toast hidden"></div>
     </div>`;
+  wireThemePicker();
   wireAppEvents();
+}
+
+function renderNoteList(list: Note[]): string {
+  if (!list.length) {
+    return '<div class="empty-list"><span>✦</span><p>还没有匹配的笔记</p><small>点击右上角 ＋ 创建第一条</small></div>';
+  }
+  return list.map((note) => `
+    <button class="note-row ${note.id === state.selectedId ? "selected" : ""}" data-note-id="${note.id}">
+      <span class="note-row-title">${escapeHtml(note.title || "未命名笔记")}</span>
+      <span class="note-row-preview">${escapeHtml(notePreview(note))}</span>
+      <span class="note-row-meta">${note.category ? escapeHtml(note.category) : "未分类"} · ${formatDate(note.updatedAt)}</span>
+    </button>`).join("");
 }
 
 function renderEmptyEditor(): string {
@@ -318,7 +406,20 @@ function renderEditor(note: Note): string {
         <div class="updated-label">更新于<br /><strong>${formatDate(note.updatedAt)}</strong></div>
       </div>
       <div class="editor-toolbar">
-        <div class="segmented"><button class="${state.editorMode === "edit" ? "active" : ""}" data-editor-mode="edit">编辑</button><button class="${state.editorMode === "preview" ? "active" : ""}" data-editor-mode="preview">预览</button></div>
+        <div class="editor-toolbar-controls">
+          <div class="segmented" role="tablist" aria-label="编辑模式"><button class="${state.editorMode === "edit" ? "active" : ""}" data-editor-mode="edit">编辑</button><button class="${state.editorMode === "preview" ? "active" : ""}" data-editor-mode="preview">预览</button></div>
+          ${state.editorMode === "edit"
+            ? `<div class="markdown-tools" role="toolbar" aria-label="Markdown 格式">
+                <button class="editor-tool" type="button" data-format="bold" title="粗体（Ctrl/Cmd+B）" aria-label="插入粗体"><strong>B</strong></button>
+                <button class="editor-tool" type="button" data-format="italic" title="斜体（Ctrl/Cmd+I）" aria-label="插入斜体"><em>I</em></button>
+                <button class="editor-tool" type="button" data-format="heading" title="标题" aria-label="插入标题">H</button>
+                <button class="editor-tool" type="button" data-format="quote" title="引用" aria-label="插入引用">❯</button>
+                <button class="editor-tool" type="button" data-format="bullet" title="无序列表" aria-label="插入无序列表">•</button>
+                <button class="editor-tool" type="button" data-format="code" title="代码" aria-label="插入代码">&lt;/&gt;</button>
+                <button class="editor-tool" type="button" data-format="link" title="链接（Ctrl/Cmd+K）" aria-label="插入链接">↗</button>
+              </div>`
+            : ""}
+        </div>
         <span class="markdown-hint">Markdown · 自动保存</span>
       </div>
       ${state.editorMode === "edit"
@@ -328,7 +429,46 @@ function renderEditor(note: Note): string {
     </section>`;
 }
 
-function wireAppEvents(): void {
+function formatBodyInput(textarea: HTMLTextAreaElement, format: string): void {
+  const value = textarea.value;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = value.slice(start, end);
+  let replacement = selected;
+  let nextStart = start;
+  let nextEnd = end;
+
+  if (format === "bold" || format === "italic" || format === "code") {
+    const marker = format === "bold" ? "**" : format === "italic" ? "*" : "`";
+    const content = selected || (format === "code" ? "代码" : format === "bold" ? "粗体文字" : "斜体文字");
+    replacement = `${marker}${content}${marker}`;
+    nextStart = start + marker.length;
+    nextEnd = nextStart + content.length;
+  } else if (format === "link") {
+    const content = selected || "链接文字";
+    replacement = `[${content}](https://)`;
+    nextStart = start + content.length + 3;
+    nextEnd = nextStart + 8;
+  } else if (format === "heading" || format === "quote" || format === "bullet") {
+    const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const lineEndIndex = value.indexOf("\n", end);
+    const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
+    const block = value.slice(lineStart, lineEnd);
+    const prefix = format === "heading" ? "# " : format === "quote" ? "> " : "- ";
+    const lines = block.split("\n");
+    const prefixed = lines.map((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : `${prefix}${line}`));
+    replacement = prefixed.join("\n");
+    nextStart = lineStart;
+    nextEnd = lineStart + replacement.length;
+  }
+
+  textarea.value = `${value.slice(0, start)}${replacement}${value.slice(end)}`;
+  textarea.focus();
+  textarea.setSelectionRange(nextStart, nextEnd);
+  updateSelectedNote({ body: textarea.value });
+}
+
+function wireNoteRows(): void {
   app.querySelectorAll<HTMLButtonElement>("[data-note-id]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedId = button.dataset.noteId || null;
@@ -337,12 +477,23 @@ function wireAppEvents(): void {
       renderApp();
     });
   });
+}
+
+function refreshNoteList(): void {
+  const list = filteredNotes();
+  const count = app.querySelector<HTMLElement>(".note-count");
+  if (count) count.textContent = `${list.length} 条笔记${state.pending ? ` · ${state.pending} 项待同步` : ""}`;
+  const listElement = app.querySelector<HTMLElement>(".note-list");
+  if (!listElement) return;
+  listElement.innerHTML = renderNoteList(list);
+  wireNoteRows();
+}
+
+function wireAppEvents(): void {
+  wireNoteRows();
   app.querySelector<HTMLInputElement>("#search-input")?.addEventListener("input", (event) => {
     state.search = (event.target as HTMLInputElement).value;
-    renderApp();
-    const input = app.querySelector<HTMLInputElement>("#search-input");
-    input?.focus();
-    input?.setSelectionRange(state.search.length, state.search.length);
+    refreshNoteList();
   });
   const categoryFilter = app.querySelector("#category-filter") as HTMLSelectElement | null;
   categoryFilter?.addEventListener("change", (event: Event) => {
@@ -368,6 +519,19 @@ function wireAppEvents(): void {
   categoryInput?.addEventListener("input", () => updateSelectedNote({ category: categoryInput.value }));
   tagsInput?.addEventListener("input", () => updateSelectedNote({ tags: normalizeTags(tagsInput.value) }));
   bodyInput?.addEventListener("input", () => updateSelectedNote({ body: bodyInput.value }));
+  app.querySelectorAll<HTMLButtonElement>("[data-format]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (bodyInput) formatBodyInput(bodyInput, button.dataset.format || "");
+    });
+  });
+  bodyInput?.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    const key = event.key.toLowerCase();
+    const format = key === "b" ? "bold" : key === "i" ? "italic" : key === "k" ? "link" : "";
+    if (!format) return;
+    event.preventDefault();
+    formatBodyInput(bodyInput, format);
+  });
 }
 
 function updateSelectedNote(patch: Partial<Note>): void {
@@ -381,6 +545,21 @@ function updateSelectedNote(patch: Partial<Note>): void {
   Object.assign(note, patch, { updatedAt: Date.now() });
   setStatus("本地已保存，等待同步");
   scheduleSave(note);
+  const row = [...app.querySelectorAll<HTMLButtonElement>(".note-row")].find(
+    (candidate) => candidate.dataset.noteId === note.id
+  );
+  if (row) {
+    const title = row.querySelector<HTMLElement>(".note-row-title");
+    const preview = row.querySelector<HTMLElement>(".note-row-preview");
+    const meta = row.querySelector<HTMLElement>(".note-row-meta");
+    if (title) title.textContent = note.title || "未命名笔记";
+    if (preview) preview.textContent = notePreview(note);
+    if (meta) meta.textContent = `${note.category || "未分类"} · ${formatDate(note.updatedAt)}`;
+  }
+  const breadcrumb = app.querySelector<HTMLElement>(".editor-breadcrumb span:last-child");
+  if (breadcrumb) breadcrumb.textContent = note.category || "未分类";
+  const updated = app.querySelector<HTMLElement>(".updated-label strong");
+  if (updated) updated.textContent = formatDate(note.updatedAt);
   const count = document.querySelector(".word-count");
   if (count) count.textContent = `${note.body.length} 字符`;
 }
@@ -576,8 +755,9 @@ async function flushOutbox(): Promise<void> {
     setStatus(state.pending ? `待同步 ${state.pending} 项` : "已同步到加密存储");
   } finally {
     state.syncing = false;
-    const selected = document.querySelector<HTMLElement>(".status-text");
-    if (selected) selected.textContent = state.status;
+    document.querySelectorAll<HTMLElement>(".status-text").forEach((element) => {
+      element.textContent = state.status;
+    });
   }
 }
 
