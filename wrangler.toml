@@ -11,7 +11,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "cloudflare-private-notes"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "80bc9a9e-af34-4e3e-abc3-9328d0871f95"
 migrations_dir = "migrations"
 
 [observability]

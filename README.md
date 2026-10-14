@@ -88,7 +88,7 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
 1. GitHub 账号和一个仓库。
 2. Cloudflare 账号。
-3. Node.js 20 或更高版本（仅用于本地初始化、测试和设置 Worker Secret）。
+3. Node.js 22.13 或更高版本（仅用于本地初始化、测试和设置 Worker Secret）。
 4. Git 和 pnpm 11。仓库锁定文件是 `pnpm-lock.yaml`，CI 会使用 `pnpm install --frozen-lockfile`。
 5. Cloudflare 的免费 `workers.dev` 子域名，或你自己的域名。域名注册和某些域名服务可能产生费用。
 
@@ -225,7 +225,7 @@ GitHub Actions 需要一个只允许部署目标账号的 API Token。打开 Clo
 工作流文件是 [`deploy.yml`](./.github/workflows/deploy.yml)，默认只在 `main` 分支 push 时部署，也支持 **Actions → Deploy to Cloudflare → Run workflow** 手动触发。它会按顺序执行：
 
 1. 拉取代码。
-2. 安装 Node.js 20 和 pnpm 11。
+2. 安装 Node.js 22 和 pnpm 11。
 3. `pnpm install --frozen-lockfile`。
 4. `pnpm run typecheck`。
 5. `pnpm run build`。
