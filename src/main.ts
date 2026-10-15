@@ -28,6 +28,7 @@ if ("serviceWorker" in navigator) {
 type AuthMode = "login" | "register";
 type EditorMode = "edit" | "preview";
 type Theme = "system" | "light" | "dark";
+type MobileView = "list" | "editor";
 
 interface AppState {
   session: Session | null;
@@ -45,10 +46,16 @@ interface AppState {
   busy: boolean;
   cursor: number;
   theme: Theme;
+  mobileView: MobileView;
 }
 
 const THEME_STORAGE_KEY = "private-notes:theme";
 const themeMedia = window.matchMedia?.("(prefers-color-scheme: dark)");
+const mobileMedia = window.matchMedia?.("(max-width: 600px)");
+
+function isMobileViewport(): boolean {
+  return mobileMedia?.matches ?? window.innerWidth <= 600;
+}
 
 function readTheme(): Theme {
   try {
@@ -86,11 +93,13 @@ const state: AppState = {
   syncing: false,
   busy: false,
   cursor: 0,
-  theme: readTheme()
+  theme: readTheme(),
+  mobileView: "list"
 };
 
 let saveTimer: number | undefined;
 const MAX_NOTE_BODY_CHARS = 350_000;
+let wasMobileViewport = isMobileViewport();
 
 applyTheme();
 if (themeMedia) {
@@ -345,8 +354,10 @@ function renderApp(): void {
   const selected = state.selectedId ? state.notes.get(state.selectedId) : undefined;
   const list = filteredNotes();
   const categoryOptions = categories().map((category) => `<option value="${escapeHtml(category)}" ${state.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("");
+  const mobileViewport = isMobileViewport();
+  const mobileClass = mobileViewport ? ` mobile-focus mobile-view-${state.mobileView}` : "";
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell${mobileClass}" data-mobile-view="${mobileViewport ? state.mobileView : "desktop"}">
       <header class="topbar">
         <div class="topbar-brand"><div class="brand-mark small">CF</div><div><strong>Private Notes</strong><span>encrypted workspace</span></div></div>
         <div class="topbar-actions">
@@ -397,7 +408,10 @@ function renderEditor(note: Note): string {
     <section class="editor">
       <div class="editor-head">
         <div class="editor-breadcrumb"><span>笔记库</span><b>/</b><span>${note.category ? escapeHtml(note.category) : "未分类"}</span></div>
-        <div class="editor-actions"><button class="icon-button" id="delete-note" title="删除笔记" aria-label="删除笔记">⌫</button></div>
+        <div class="editor-actions">
+          <button class="icon-button mobile-back-button" id="mobile-back-button" title="返回笔记列表" aria-label="返回笔记列表">←</button>
+          <button class="icon-button" id="delete-note" title="删除笔记" aria-label="删除笔记">⌫</button>
+        </div>
       </div>
       <input id="title-input" class="title-input" value="${escapeHtml(note.title)}" placeholder="无标题" aria-label="笔记标题" />
       <div class="metadata-row">
@@ -474,6 +488,7 @@ function wireNoteRows(): void {
       state.selectedId = button.dataset.noteId || null;
       state.editorMode = "edit";
       state.status = "";
+      if (isMobileViewport()) state.mobileView = "editor";
       renderApp();
     });
   });
@@ -502,6 +517,10 @@ function wireAppEvents(): void {
   });
   app.querySelector<HTMLButtonElement>("#new-note")?.addEventListener("click", () => void createNote());
   app.querySelector<HTMLButtonElement>("#empty-new-note")?.addEventListener("click", () => void createNote());
+  app.querySelector<HTMLButtonElement>("#mobile-back-button")?.addEventListener("click", () => {
+    state.mobileView = "list";
+    renderApp();
+  });
   app.querySelector<HTMLButtonElement>("#logout-button")?.addEventListener("click", () => void signOut());
   app.querySelector<HTMLButtonElement>("#export-button")?.addEventListener("click", () => void downloadBackup());
   app.querySelector<HTMLButtonElement>("#delete-note")?.addEventListener("click", () => void deleteSelectedNote());
@@ -632,6 +651,7 @@ async function createNote(): Promise<void> {
   state.notes.set(note.id, note);
   state.selectedId = note.id;
   state.editorMode = "edit";
+  if (isMobileViewport()) state.mobileView = "editor";
   renderApp();
   await persistNote(note);
   if (state.online) await flushOutbox();
@@ -646,6 +666,7 @@ async function deleteSelectedNote(): Promise<void> {
   await persistNote(note);
   state.notes.delete(note.id);
   state.selectedId = filteredNotes()[0]?.id || null;
+  if (isMobileViewport()) state.mobileView = "list";
   renderApp();
   if (state.online) await flushOutbox();
 }
@@ -823,6 +844,7 @@ async function enterSession(result: { user: Session["user"]; csrfToken: string; 
   state.notes.clear();
   state.error = "";
   state.status = "正在加载本地密文…";
+  state.mobileView = "list";
   state.cursor = (await getMeta<number>(`cursor:${result.user.userId}`)) || 0;
   const stored = await listStoredNotes(result.user.userId);
   for (const record of stored) {
@@ -863,6 +885,7 @@ async function signOut(): Promise<void> {
   state.session = null;
   state.notes.clear();
   state.selectedId = null;
+  state.mobileView = "list";
   state.pending = 0;
   state.status = "";
   state.error = "";
@@ -920,6 +943,21 @@ window.addEventListener("offline", () => {
     pill.innerHTML = "<i></i>离线";
   }
 });
+function handleViewportChange(): void {
+  const nextIsMobile = isMobileViewport();
+  if (nextIsMobile === wasMobileViewport) return;
+  wasMobileViewport = nextIsMobile;
+  state.mobileView = "list";
+  if (state.session) renderApp();
+}
+window.addEventListener("resize", handleViewportChange);
+if (mobileMedia) {
+  const media = mobileMedia as MediaQueryList & {
+    addListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+  };
+  if (typeof media.addEventListener === "function") media.addEventListener("change", handleViewportChange);
+  else media.addListener?.(handleViewportChange);
+}
 window.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s" && state.session) {
     event.preventDefault();

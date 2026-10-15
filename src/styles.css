@@ -213,3 +213,189 @@ html[data-theme="dark"] .empty-orbit { border-color: #405d8e; color: #9ab9ff; ba
   .topbar { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); gap: 9px; }.topbar-brand span { display: none; }.topbar-brand { flex: 1 1 120px; }.topbar-actions { margin-left: auto; gap: 6px; flex: 0 1 auto; flex-wrap: nowrap; }.topbar .theme-picker select { width: 80px; }.connection-pill { display: none; }.ghost-button { font-size: 12px; white-space: nowrap; }.icon-button { flex: 0 0 34px; }
   .sidebar { max-height: min(44dvh, 400px); padding: 16px 12px; }.sidebar-head { padding: 0 6px 14px; }.sidebar-head h2 { font-size: 22px; }.note-list { grid-template-columns: 1fr; }.metadata-row { grid-template-columns: 1fr; gap: 12px; padding-bottom: 20px; }.updated-label { grid-column: auto; }.editor { width: 100%; padding: 20px max(16px, env(safe-area-inset-left)) max(22px, env(safe-area-inset-bottom)); }.editor-head { align-items: flex-start; }.editor-toolbar { align-items: center; gap: 8px; flex-direction: row; flex-wrap: wrap; padding: 16px 0 8px; }.editor-toolbar-controls, .markdown-tools { width: 100%; }.theme-picker { margin-left: auto; }.markdown-hint { margin-left: auto; }.title-input { margin: 18px 0 18px; font-size: 32px; line-height: 1.15; }.body-input, .markdown-preview { min-height: min(54dvh, 420px); font-size: 15px; line-height: 1.75; }.editor-footer { gap: 6px; padding-top: 12px; flex-wrap: wrap; }.editor-footer .status-text { max-width: calc(100% - 54px); }.word-count { margin-left: auto; }
 }
+
+/*
+ * Mobile focus mode
+ *
+ * The app shell receives data-mobile-view="list" or "editor" from the
+ * view state. These rules are intentionally scoped to <=600px so tablets
+ * and desktop retain the normal two-pane workspace.
+ */
+.mobile-back-button,
+#mobile-back-button { display: none; }
+
+@media (max-width: 600px) {
+  .app-shell[data-mobile-view="list"] .workspace,
+  .app-shell.mobile-view-list .workspace {
+    display: block;
+    min-height: calc(100dvh - 68px);
+  }
+
+  .app-shell[data-mobile-view="list"] .editor-area,
+  .app-shell.mobile-view-list .editor-area {
+    display: none;
+  }
+
+  .app-shell[data-mobile-view="list"] .sidebar,
+  .app-shell.mobile-view-list .sidebar {
+    min-height: calc(100dvh - 68px);
+    max-height: none;
+    border-bottom: 0;
+  }
+
+  .app-shell[data-mobile-view="editor"],
+  .app-shell.mobile-view-editor {
+    min-height: 100dvh;
+  }
+
+  .app-shell[data-mobile-view="editor"] .topbar,
+  .app-shell[data-mobile-view="editor"] .sidebar,
+  .app-shell.mobile-view-editor .topbar,
+  .app-shell.mobile-view-editor .sidebar {
+    display: none;
+  }
+
+  .app-shell[data-mobile-view="editor"] .workspace,
+  .app-shell.mobile-view-editor .workspace {
+    display: block;
+    min-height: 100dvh;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor-area,
+  .app-shell.mobile-view-editor .editor-area {
+    display: block;
+    width: 100%;
+    min-height: 100dvh;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor,
+  .app-shell.mobile-view-editor .editor {
+    width: 100%;
+    max-width: none;
+    min-height: 100dvh;
+    height: 100dvh;
+    margin: 0;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(14px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    overflow: hidden;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor-head,
+  .app-shell.mobile-view-editor .editor-head {
+    flex: 0 0 auto;
+    min-height: 36px;
+    align-items: center;
+  }
+
+  .app-shell[data-mobile-view="editor"] .mobile-back-button,
+  .app-shell[data-mobile-view="editor"] #mobile-back-button,
+  .app-shell.mobile-view-editor .mobile-back-button,
+  .app-shell.mobile-view-editor #mobile-back-button {
+    display: inline-grid;
+    flex: 0 0 34px;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin-right: auto;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor-breadcrumb,
+  .app-shell[data-mobile-view="editor"] .metadata-row,
+  .app-shell[data-mobile-view="editor"] .markdown-hint,
+  .app-shell[data-mobile-view="editor"] .editor-footer,
+  .app-shell.mobile-view-editor .editor-breadcrumb,
+  .app-shell.mobile-view-editor .metadata-row,
+  .app-shell.mobile-view-editor .markdown-hint,
+  .app-shell.mobile-view-editor .editor-footer {
+    display: none;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor-actions,
+  .app-shell.mobile-view-editor .editor-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .app-shell[data-mobile-view="editor"] .title-input,
+  .app-shell.mobile-view-editor .title-input {
+    flex: 0 0 auto;
+    width: 100%;
+    margin: 14px 0 12px;
+    padding: 0;
+    font-size: 30px;
+    line-height: 1.2;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor-toolbar,
+  .app-shell.mobile-view-editor .editor-toolbar {
+    flex: 0 0 auto;
+    display: block;
+    width: 100%;
+    padding: 8px 0 10px;
+  }
+
+  .app-shell[data-mobile-view="editor"] .editor-toolbar-controls,
+  .app-shell.mobile-view-editor .editor-toolbar-controls {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .app-shell[data-mobile-view="editor"] .markdown-tools,
+  .app-shell.mobile-view-editor .markdown-tools {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-shell[data-mobile-view="editor"] .markdown-tools .editor-tool,
+  .app-shell.mobile-view-editor .markdown-tools .editor-tool {
+    flex: 0 0 30px;
+  }
+
+  .app-shell[data-mobile-view="editor"] .segmented,
+  .app-shell.mobile-view-editor .segmented {
+    flex: 0 0 auto;
+  }
+
+  .app-shell[data-mobile-view="editor"] .body-input,
+  .app-shell[data-mobile-view="editor"] .markdown-preview,
+  .app-shell.mobile-view-editor .body-input,
+  .app-shell.mobile-view-editor .markdown-preview {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow: auto;
+  }
+
+  .app-shell[data-mobile-view="editor"] .body-input,
+  .app-shell.mobile-view-editor .body-input {
+    resize: none;
+    padding: 10px 0 0;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .app-shell[data-mobile-view="editor"] .markdown-preview,
+  .app-shell.mobile-view-editor .markdown-preview {
+    padding: 10px 0 0;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+}
