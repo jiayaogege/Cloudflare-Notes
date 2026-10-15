@@ -1,0 +1,217 @@
+name: Build Desktop and Android Apps
+
+on:
+  push:
+    tags:
+      - "app-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      VITE_NATIVE_API_BASE_URL: ${{ vars.VITE_NATIVE_API_BASE_URL || 'https://cloudflare-private-notes.nanxunke.workers.dev' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-24.04
+            name: linux-x64
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            name: macos-arm64
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            name: macos-x64
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set app version from release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/set-app-version.mjs
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux bundling dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri app
+        run: |
+          node scripts/set-native-api-origin.mjs
+          pnpm exec tauri build --ci --no-sign --target "${{ matrix.target }}"
+
+      - name: Stage installers
+        run: node scripts/stage-tauri-bundles.mjs src-tauri/target staging "${{ matrix.name }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: staging/*
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Build Android APK
+    runs-on: ubuntu-24.04
+    env:
+      VITE_NATIVE_API_BASE_URL: ${{ vars.VITE_NATIVE_API_BASE_URL || 'https://cloudflare-private-notes.nanxunke.workers.dev' }}
+      ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set app version from release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/set-app-version.mjs
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK and NDK
+        run: |
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$sdk_root"
+          sdkmanager --install "platforms;android-37" "build-tools;37.0.0" "ndk;27.0.12077973"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$sdk_root/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$sdk_root/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize Android project
+        run: pnpm exec tauri android init --ci
+
+      - name: Prepare Android signing key
+        id: signing
+        shell: bash
+        run: |
+          mkdir -p src-tauri/gen/android
+          if [[ -n "$ANDROID_KEY_BASE64$ANDROID_KEY_PASSWORD$ANDROID_KEY_ALIAS" ]]; then
+            if [[ -z "$ANDROID_KEY_BASE64" || -z "$ANDROID_KEY_PASSWORD" || -z "$ANDROID_KEY_ALIAS" ]]; then
+              echo "Set all Android signing secrets together, or leave all three unset."
+              exit 1
+            fi
+            echo "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/cloudflare-notes-release.jks"
+            keytool -list -keystore "$RUNNER_TEMP/cloudflare-notes-release.jks" \
+              -storepass "$ANDROID_KEY_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+            key_alias="$ANDROID_KEY_ALIAS"
+            key_password="$ANDROID_KEY_PASSWORD"
+            asset_label="android"
+          else
+            key_password="$(openssl rand -hex 24)"
+            key_alias="cloudflare-notes-test"
+            keytool -genkeypair -noprompt -v \
+              -keystore "$RUNNER_TEMP/cloudflare-notes-test.jks" \
+              -storetype JKS -storepass "$key_password" -keypass "$key_password" \
+              -alias "$key_alias" -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Cloudflare Private Notes Test, OU=Test, O=Cloudflare Private Notes, L=Unknown, ST=Unknown, C=US"
+            mv "$RUNNER_TEMP/cloudflare-notes-test.jks" "$RUNNER_TEMP/cloudflare-notes-release.jks"
+            asset_label="android-test-signed"
+          fi
+          export SIGNING_KEY_ALIAS="$key_alias"
+          export SIGNING_KEY_PASSWORD="$key_password"
+          export SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/cloudflare-notes-release.jks"
+          node scripts/write-android-signing-properties.mjs
+          echo "asset_label=$asset_label" >> "$GITHUB_OUTPUT"
+          node scripts/configure-android-signing.mjs
+
+      - name: Build universal APK
+        run: |
+          node scripts/set-native-api-origin.mjs
+          pnpm exec tauri android build --ci --apk
+
+      - name: Stage APK
+        run: |
+          mkdir -p staging
+          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
+            "staging/Cloudflare-Private-Notes-${GITHUB_REF_NAME}-${{ steps.signing.outputs.asset_label }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: staging/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: [desktop, android]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums and publish assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$(find release-assets -maxdepth 1 -type f -print -quit)"
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+          version="${GITHUB_REF_NAME#app-v}"
+          notes="Desktop installers are unsigned and may show platform security warnings. Android APKs built without the configured release keystore use a temporary test key and cannot be updated with later test builds. Verify downloads with SHA256SUMS.txt."
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Cloudflare Private Notes ${version}" --notes "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --title "Cloudflare Private Notes ${version}" \
+              --notes "$notes"
+          fi

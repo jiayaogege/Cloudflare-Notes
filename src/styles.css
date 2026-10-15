@@ -92,6 +92,7 @@ input:focus, textarea:focus, select:focus { border-color: #6d99ec; box-shadow: 0
 .primary-button:hover { background: var(--accent-strong); transform: translateY(-1px); }
 .primary-button.compact { width: fit-content; padding: 11px 16px; }
 .auth-note { margin: 24px 0 0; color: #8993a3; font-size: 12px; line-height: 1.6; }
+.download-link { align-self: flex-start; margin-top: 12px; color: var(--accent-strong); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .form-error { margin: 0; color: var(--danger); font-size: 13px; }
 
 .app-shell { min-height: 100vh; background: var(--page); }

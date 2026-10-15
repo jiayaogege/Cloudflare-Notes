@@ -1,6 +1,8 @@
 # Cloudflare 私人云笔记
 
-一个可以直接推送到 GitHub、再由 GitHub Actions 部署到 Cloudflare 的私人云笔记应用。笔记标题、正文、分类和标签在浏览器端加密，Cloudflare Worker、D1 数据库、日志和备份只保存密文与同步所需的元数据。
+一个可以直接推送到 GitHub、再由 GitHub Actions 部署到 Cloudflare 的私人云笔记应用。笔记标题、正文、分类和标签在浏览器端加密，Cloudflare Worker、D1 数据库、日志和备份只保存密文与同步所需的元数据。仓库同时提供浏览器 PWA、Tauri 2 Android APK 和 Windows/macOS/Linux 桌面客户端打包配置。
+
+浏览器版和 PWA 会在 Worker 部署成功后可用。Android/桌面安装包只有在 `.github/workflows/release.yml` 的 `app-v*` 标签工作流全部成功后才会出现在 GitHub Releases；在此之前不要把 `releases/latest` 当作已有安装包的保证。
 
 本项目只使用：
 
@@ -8,6 +10,8 @@
 - Workers Static Assets
 - Cloudflare D1
 - GitHub Actions（构建和发布）
+- PWA（Web App Manifest + Service Worker）
+- Tauri 2（复用同一套 Vite/TypeScript 前端）
 
 不依赖 R2、Queues、Durable Objects、邮件服务、第三方搜索或付费 AI 服务。项目不会主动购买付费资源，但“永久免费”无法由项目保证：Cloudflare、GitHub 的免费额度、可用地区、计费政策和域名费用都可能变化。部署后请开启用量/账单告警，并以官方页面为准：
 
@@ -52,10 +56,13 @@ E2EE 保护的是笔记数据，不隐藏登录时间、同步时间、密文大
 | --- | --- |
 | `src/` | Vite 前端、WebCrypto、IndexedDB、同步和界面 |
 | `worker/index.ts` | Cloudflare Worker API、认证、权限隔离、CAS |
-| `public/sw.js` | 离线应用壳 Service Worker |
+| `public/manifest.webmanifest` | PWA 名称、图标、启动模式和主题色 |
+| `public/sw.js` | 只缓存应用壳的 Service Worker |
+| `src-tauri/` | Tauri 2 桌面/Android 客户端、HTTP 权限和应用图标 |
 | `migrations/0001_init.sql` | D1 初始迁移 |
 | `wrangler.toml` | Worker、Static Assets 和 D1 绑定 |
 | `.github/workflows/deploy.yml` | GitHub Actions 构建、迁移和部署 |
+| `.github/workflows/release.yml` | `app-v*` 标签触发的跨平台安装包和 GitHub Release |
 | `scripts/smoke.mjs` | API 冒烟测试 |
 | `.dev.vars.example` | 本地开发变量模板 |
 
@@ -440,7 +447,244 @@ git push origin main
 4. 提交迁移和代码。
 5. 推送到 `main`，由受保护的 `production` 环境执行远程迁移。
 
-## 15. 成本和数据安全注意事项
+## 15. PWA、Android 和桌面客户端
+
+客户端不是另一套笔记后端。它们都复用当前 Vite/TypeScript 前端、WebCrypto、IndexedDB、加密备份和同步协议；Worker、D1、`AUTH_PEPPER` 和 E2EE 数据边界不变。
+
+### 15.1 浏览器 PWA 安装
+
+部署 `main` 成功后，用 HTTPS 打开 Worker 地址，例如：
+
+```text
+https://cloudflare-private-notes.<你的-subdomain>.workers.dev
+```
+
+项目会提供 `public/manifest.webmanifest`、应用图标和 `public/sw.js`。在支持 PWA 的浏览器中可以安装：
+
+- Chrome/Edge 桌面：打开网站后，地址栏右侧选择“安装应用”；也可以在浏览器菜单中选择“安装 Cloudflare Private Notes”。
+- Android Chrome：打开网站，菜单选择“添加到主屏幕”或“安装应用”。
+- iPhone/iPad Safari：打开网站，点击分享，选择“添加到主屏幕”。
+
+PWA 的 Service Worker 只缓存应用壳和静态资源，不缓存 `/api` 响应、笔记明文或密文响应。首次打开、首次登录和首次同步需要网络；已经解锁过的设备可以依靠 IndexedDB 继续编辑，联网后由现有队列重试同步。清除站点数据会删除本设备的本地密文和待同步队列，执行前应先完成同步并导出加密备份。
+
+### 15.2 GitHub Actions 发布安装包
+
+安装包由 [`release.yml`](./.github/workflows/release.yml) 构建。它只对 `app-v*` 标签自动发布；普通 `main` push 只部署 Worker 和 PWA，不会生成桌面或 Android Release。当前工作流成功前，GitHub 的 `releases/latest` 可能不存在安装包。
+
+在已通过第 13 节验证的 `main` 分支上发布一个版本：
+
+```powershell
+git checkout main
+git pull --ff-only origin main
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run build
+
+git tag -a app-v1.0.0 -m "Cloudflare Private Notes app v1.0.0"
+git push origin app-v1.0.0
+```
+
+将 `app-v1.0.0` 换成新的版本号，例如 `app-v1.0.1`。不要复用已经发布过的标签；修复版本应创建新的标签。推送后，在 GitHub 的 **Actions → Build Desktop and Android Apps** 查看矩阵任务：
+
+1. Windows x64：Tauri 安装包（通常包含 `.msi`，并按构建结果收集 `.exe`）。
+2. Linux x64：`.deb`、`.rpm` 和 `.AppImage`（具体文件以该次构建产物为准）。
+3. macOS Apple Silicon：`.dmg`。
+4. macOS Intel：`.dmg`。
+5. Android：通用 APK。
+6. 发布任务计算所有安装包的 `SHA256SUMS.txt`，再创建同名 GitHub Release。
+
+只有桌面和 Android 两个构建矩阵全部成功，发布任务才会创建 Release。安装包文件名会包含版本标签和平台，例如 `Cloudflare-Private-Notes-app-v1.0.0-windows-x64-...msi`。不要根据文件名推断签名状态，以 Release 页面中的说明为准。
+
+当前工作流只监听 `app-v*` 标签；普通分支推送不会触发客户端打包。需要排查构建环境时，可在本地按第 15.7 节运行对应命令，正式对外发布仍应使用新的 `app-v*` 标签。
+
+### 15.3 从 GitHub Releases 下载和校验
+
+打开仓库的 [Releases 页面](https://github.com/jiayaogege/Cloudflare-Notes/releases)，选择目标版本。只有在第 15.2 节工作流成功后，页面才会出现安装包。
+
+下载对应平台的安装包和 `SHA256SUMS.txt`，在下载目录执行校验：
+
+```powershell
+# Windows PowerShell
+Get-FileHash .\Cloudflare-Private-Notes-app-v1.0.0-windows-x64-*.msi -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
+```
+
+```bash
+# macOS / Linux
+sha256sum -c SHA256SUMS.txt
+```
+
+PowerShell 中将计算出的 Hash 与 `SHA256SUMS.txt` 中同名文件的值比较。macOS 没有 `sha256sum` 时可使用：
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+校验失败、文件名不匹配或下载来源不是该仓库的 Release 时不要安装。
+
+### 15.4 安装 Android APK
+
+下载 Release 中的 `...android.apk` 或 `...android-test-signed.apk` 到 Android 设备：
+
+1. 在系统设置中临时允许用于下载的浏览器或文件管理器安装未知来源应用。
+2. 点击 APK，确认安装。
+3. 安装完成后关闭“未知来源安装”权限。
+4. 首次登录仍使用现有账号和主密码；主密码不会上传，API 只接收认证材料和密文。
+
+没有配置正式 Android 签名密钥时，工作流会为该次运行临时生成测试密钥，产物名称带 `android-test-signed`。测试 APK 可以正常安装和使用，但不能通过后续另一个测试密钥版本覆盖升级；升级前需要导出加密备份、卸载旧 APK、安装新 APK，再用主密码解锁并同步。正式长期分发应配置第 15.6 节的签名 Secrets。
+
+### 15.5 安装 Windows、macOS 和 Linux 客户端
+
+- Windows x64：下载 `.msi`（推荐）或工作流收集到的 `.exe`，按向导安装。未配置代码签名时，Windows SmartScreen 可能显示“未知发布者”；安装前先校验 SHA-256。
+- macOS Apple Silicon：下载 `macos-arm64` 的 `.dmg`；Intel Mac 下载 `macos-x64` 的 `.dmg`。打开 DMG 后将应用拖到 Applications。当前工作流没有导入 Apple Developer 证书或公证流程，macOS 可能需要在“系统设置 → 隐私与安全性”中确认打开。
+- Linux：`.deb` 适用于 Debian/Ubuntu，`.rpm` 适用于 Fedora/openSUSE，`.AppImage` 适用于多数桌面发行版。AppImage 需要先授予执行权限：
+
+```bash
+chmod +x Cloudflare-Private-Notes-app-v1.0.0-linux-x64-*.AppImage
+./Cloudflare-Private-Notes-app-v1.0.0-linux-x64-*.AppImage
+```
+
+当前 Release 工作流没有导入 Apple Developer 证书，也没有配置 Windows Authenticode、Apple Developer ID/notarization 或 Linux 包签名 Secrets。即使为 macOS 设置了 `APPLE_SIGNING_IDENTITY`，仓库当前没有证书安装和公证步骤，不能视为可验证的 Developer ID 签名；Windows 和 Linux 包也没有受信任发布者签名。安装前应校验 SHA-256，不要为了“消除”系统警告而关闭系统安全策略。
+
+### 15.6 Android 正式签名（可选）
+
+只有准备长期分发 Android APK 时才配置正式签名。签名材料必须保存在密码管理器和离线备份中；丢失 keystore 将无法用同一应用身份发布升级包。
+
+先在本地生成一个 JKS（示例有效期可按组织政策调整）：
+
+```powershell
+keytool -genkeypair -v `
+  -keystore cloudflare-notes-release.jks `
+  -storetype JKS `
+  -alias cloudflare-notes `
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+将 JKS 转为单行 Base64。PowerShell：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\cloudflare-notes-release.jks"))
+```
+
+在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，添加：
+
+| Secret | 内容 |
+| --- | --- |
+| `ANDROID_KEY_BASE64` | 上一步得到的完整 Base64 字符串 |
+| `ANDROID_KEY_PASSWORD` | JKS 的密码 |
+| `ANDROID_KEY_ALIAS` | 例如 `cloudflare-notes` |
+
+工作流会将这些 Secrets 写入临时 runner，调用 `scripts/configure-android-signing.mjs` 配置 release build，再删除 runner。不要把 JKS、Base64、密码、`keystore.properties` 或它们的日志提交到仓库。没有这三个 Secrets 时，工作流会自动使用一次性的测试签名，不会因为缺少正式密钥而阻止构建。
+
+桌面签名目前没有对应的证书导入和公证实现，因此不要自行添加未被工作流读取的 `WINDOWS_*`、`APPLE_*` 或 `LINUX_*` Secret 并期待它们生效。需要正式桌面签名时，应先修改并审查 Release 工作流，再为每个平台增加证书安装、签名和公证步骤。
+
+### 15.7 本地构建 Tauri 客户端
+
+Tauri 应用标识为 `com.jiayaogege.cloudflarenotes`。本地构建需要先部署或准备一个可访问的 Worker API；前端仍然使用同一套加密和同步逻辑。
+
+通用前置条件：
+
+- Node.js 22.13 或更高版本、pnpm 11。
+- Rust stable、Cargo 和系统 C/C++ 编译工具链。
+- Windows：Visual Studio Build Tools 的 C++ 工作负载和 WebView2 Runtime。
+- macOS：Xcode Command Line Tools。
+- Ubuntu/Debian（与 CI 对齐）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  patchelf
+```
+
+安装依赖后：
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run build
+
+# 调试运行桌面应用
+pnpm run app:dev
+
+# 构建当前操作系统的桌面安装包
+pnpm run app:build
+```
+
+构建产物通常位于 `src-tauri/target/release/bundle/` 下的 `msi`、`dmg`、`deb`、`rpm` 或 `appimage` 目录。
+
+Android 本地构建还需要 Java 17、Android Studio/SDK 命令行工具、Android platform 37、Build Tools 37.0.0、NDK 27.0.12077973 和 Rust Android targets。设置 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指向 Android SDK，并设置 `NDK_HOME` 指向 NDK 目录；安装目标后执行：
+
+```powershell
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+pnpm exec tauri android init
+pnpm run app:android:build
+```
+
+通用 APK 通常位于：
+
+```text
+src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+```
+
+CI 每次从干净 runner 执行 `tauri android init`，所以 `src-tauri/gen/android` 不要求预先提交到仓库。当前开发机如果没有 Rust、Java 或 Android SDK，可以继续验证 Web/PWA，但不能声称本地已完成原生 APK/桌面包构建；以 GitHub Actions 的绿色结果为准。
+
+### 15.8 原生 API 地址和 Tauri HTTP 权限
+
+原生客户端构建时读取公开的 `VITE_NATIVE_API_BASE_URL`。默认值是：
+
+```text
+https://cloudflare-private-notes.nanxunke.workers.dev
+```
+
+可以在未提交的 `.env.local` 中覆盖：
+
+```env
+VITE_NATIVE_API_BASE_URL=https://notes.example.com
+```
+
+也可以在 PowerShell 当前进程中设置后立即构建：
+
+```powershell
+$env:VITE_NATIVE_API_BASE_URL = "https://notes.example.com"
+pnpm run app:build
+```
+
+`VITE_*` 会被编译进客户端，**不是秘密变量**。不要放入 Cloudflare API Token、`AUTH_PEPPER`、主密码或任何私钥。浏览器运行时仍使用同源 `/api`，只有检测到 Tauri 运行时才使用该 API origin。
+
+GitHub Release 工作流优先读取仓库的 **Settings → Secrets and variables → Actions → Variables** 中的 `VITE_NATIVE_API_BASE_URL`；未设置时使用上面的默认 `workers.dev` 地址。自定义域名部署时应设置这个公开变量，并同步更新 Tauri HTTP allowlist。
+
+如果改用自定义 API 域名，必须同时修改 [`src-tauri/capabilities/default.json`](./src-tauri/capabilities/default.json) 的最小 HTTP allowlist，例如：
+
+```json
+{
+  "identifier": "http:default",
+  "allow": [
+    {
+      "url": "https://notes.example.com/**"
+    }
+  ]
+}
+```
+
+只添加你实际控制的 HTTPS origin，不要使用 `*`。修改 allowlist 后重新构建客户端。Tauri HTTP 插件负责原生 Cookie jar；客户端请求会清空不匹配的浏览器 `Origin`，因此不需要为了桌面/Android 客户端放宽 Worker CORS。Worker 的 CSRF、会话 Cookie、Origin 校验和用户 ID 权限隔离仍然有效。
+
+### 15.9 客户端验证清单
+
+- [ ] Worker `main` 部署成功，浏览器/PWA 能打开并完成登录。
+- [ ] PWA 安装后刷新页面仍能加载应用壳；离线编辑产生待同步变更，恢复网络后队列重放。
+- [ ] `app-v*` 标签工作流的 Windows、Linux、macOS、Android 矩阵全部成功。
+- [ ] GitHub Release 同时包含目标平台安装包和 `SHA256SUMS.txt`。
+- [ ] 下载后按第 15.3 节校验 SHA-256。
+- [ ] Android 首次安装、登录、创建笔记、断网编辑、恢复同步和删除均正常。
+- [ ] 桌面端登录、自动保存、跨设备同步和主题切换正常。
+- [ ] 原生客户端 Network/日志中没有主密码、解密密钥、笔记标题、正文、分类或标签明文。
+- [ ] 使用错误或未 allowlist 的 API origin 时，客户端构建或请求按预期失败，而不是放宽到任意域名。
+- [ ] 发生 Android 测试签名升级时，先完成加密备份并确认卸载/重装后的恢复流程。
+
+## 16. 成本和数据安全注意事项
 
 - 项目不主动创建 R2、Queues、Durable Objects 或付费服务。
 - 不要为了搜索把明文标题/正文写入 D1；全文搜索必须继续在客户端解密后执行。
@@ -450,7 +694,7 @@ git push origin main
 - `AUTH_PEPPER` 丢失或错误轮换可能导致用户无法登录；它不能替代用户自己的加密备份。
 - Cloudflare 免费额度和 GitHub Actions 免费额度不是无限资源；超额可能导致请求失败、构建受限或要求启用计费。项目不会自动升级套餐。
 
-## 16. 常见问题
+## 17. 常见问题
 
 ### Actions 报 `database_id` 无效
 
@@ -478,6 +722,6 @@ Worker 尚未配置 `AUTH_PEPPER`。按第 9.2 节在 Cloudflare Dashboard 或 W
 
 服务器没有明文密钥，无法替用户恢复。只能使用之前导出的加密备份，并在本地提供正确的密码解密。
 
-## 17. 许可证和贡献
+## 18. 许可证和贡献
 
 发布前请补充明确的开源许可证、隐私政策和数据删除说明。提交 Pull Request 时不要包含真实密钥、用户数据、D1 导出、浏览器缓存或生产日志。

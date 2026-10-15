@@ -310,6 +310,9 @@ function renderAuth(): void {
           ${state.error ? `<p class="form-error">${escapeHtml(state.error)}</p>` : ""}
         </form>
         <p class="auth-note">忘记主密码无法由服务器恢复明文。请在进入后导出加密备份，并把恢复信息保存在离线位置。</p>
+        <a class="download-link" href="https://github.com/jiayaogege/Cloudflare-Notes/releases/latest" target="_blank" rel="noopener noreferrer">
+          下载 Android 与桌面客户端
+        </a>
       </section>
     </main>`;
   wireThemePicker();
