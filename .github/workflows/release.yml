@@ -35,21 +35,19 @@ jobs:
             name: macos-x64
             target: x86_64-apple-darwin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set app version from release tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/set-app-version.mjs
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/setup@v1
         with:
           version: 11.25.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+          runtime: node@22
+          cache: true
+          install: false
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -88,23 +86,21 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set app version from release tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/set-app-version.mjs
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/setup@v1
         with:
           version: 11.25.0
+          runtime: node@22
+          cache: true
+          install: false
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -113,7 +109,7 @@ jobs:
 
       - name: Install Android SDK and NDK
         run: |
-          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
           test -n "$sdk_root"
           sdkmanager --install "platforms;android-37" "build-tools;37.0.0" "ndk;27.0.12077973"
           echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
