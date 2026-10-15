@@ -615,13 +615,16 @@ pnpm run app:build
 
 构建产物通常位于 `src-tauri/target/release/bundle/` 下的 `msi`、`dmg`、`deb`、`rpm` 或 `appimage` 目录。
 
-Android 本地构建还需要 Java 17、Android Studio/SDK 命令行工具、Android platform 37、Build Tools 37.0.0、NDK 27.0.12077973 和 Rust Android targets。设置 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指向 Android SDK，并设置 `NDK_HOME` 指向 NDK 目录；安装目标后执行：
+Android 本地构建还需要 Java 17、Android Studio/SDK 命令行工具、Android platform 36、Build Tools 36.1.0、NDK 27.0.12077973 和 Rust Android targets。设置 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指向 Android SDK，并设置 `NDK_HOME` 指向 NDK 目录；安装目标后执行：
 
 ```powershell
 rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 pnpm exec tauri android init
+node scripts/set-android-sdk-level.mjs
 pnpm run app:android:build
 ```
+
+Tauri Android CLI 生成的模板目前使用 API 37，但 Android SDK 仓库尚未提供对应的 `platforms;android-37` 包；初始化后先运行此脚本，将生成项目的 `compileSdk` 和 `targetSdk` 设为可用的稳定 API 36。
 
 通用 APK 通常位于：
 
