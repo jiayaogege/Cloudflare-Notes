@@ -1,7 +1,11 @@
 name = "cloudflare-private-notes"
 main = "worker/index.ts"
 compatibility_date = "2026-10-14"
-workers_dev = true
+workers_dev = false
+
+[[routes]]
+pattern = "notes.goho.eu.org"
+custom_domain = true
 
 [assets]
 directory = "./dist"

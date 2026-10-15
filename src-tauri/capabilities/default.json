@@ -11,7 +11,7 @@
       "identifier": "http:default",
       "allow": [
         {
-          "url": "https://cloudflare-private-notes.nanxunke.workers.dev/api/*"
+          "url": "https://notes.goho.eu.org/api/*"
         }
       ]
     }

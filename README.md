@@ -97,7 +97,7 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 2. Cloudflare 账号。
 3. Node.js 22.13 或更高版本（仅用于本地初始化、测试和设置 Worker Secret）。
 4. Git 和 pnpm 11。仓库锁定文件是 `pnpm-lock.yaml`，CI 会使用 `pnpm install --frozen-lockfile`。
-5. Cloudflare 的免费 `workers.dev` 子域名，或你自己的域名。域名注册和某些域名服务可能产生费用。
+5. 已添加到当前 Cloudflare 账号且状态为 Active 的 `goho.eu.org` Zone，以及 `notes.goho.eu.org` 子域名。域名本身的注册、续费和可用性由域名提供方决定。
 
 本地安装 pnpm：
 
@@ -209,6 +209,8 @@ GitHub Actions 需要一个只允许部署目标账号的 API Token。打开 Clo
 - `Account / D1 / Edit`
 - `Account / Account Settings / Read`（如果控制台将账户读取权限单独列出）
 
+首次通过 Wrangler 创建 Worker Custom Domain 时，`Account / Workers Scripts / Edit` 也用于管理该账号的 Custom Domain。Custom Domain 的 DNS 记录和证书由 Cloudflare 自动配置；不要为了此步骤直接授予整个账号的 Global API Key 或不相关的 DNS 权限。如果部署日志明确报告缺少权限，再根据该 API 错误补充最小权限。
+
 按当前 Cloudflare 控制台中的权限名称选择最小范围即可，不要使用 Global API Key。Token 创建后只显示一次，请立即复制到 GitHub Secret；不要写入 `wrangler.toml`、README、Issue 或日志。
 
 如果把 D1 迁移改成手动执行，则自动部署只需要 Worker 部署权限，迁移命令应由有 D1 Edit 权限的受保护流程执行。
@@ -287,17 +289,43 @@ pnpm exec wrangler secret put AUTH_PEPPER
 
 当前认证验证器由 `AUTH_PEPPER` 参与计算。直接替换生产 `AUTH_PEPPER` 会使已有验证器无法通过后续登录校验；现有会话可能在过期前继续有效，但新登录会失败。除非你已经设计并验证了用户重新注册/验证器迁移流程，否则不要随意轮换这个 Secret。至少应保存离线加密备份，并在轮换前安排维护窗口。
 
-## 10. 获取访问地址
+## 10. 配置自定义域名并获取访问地址
 
-`wrangler deploy` 的 Actions 日志会输出 Worker 地址，通常是：
+生产访问地址为：
 
 ```text
-https://cloudflare-private-notes.<你的-subdomain>.workers.dev
+https://notes.goho.eu.org
 ```
 
-也可以在 Cloudflare Dashboard 的 Worker 详情页复制 URL。打开后先注册一个测试账号，再按第 13 节执行验证。
+仓库的 [`wrangler.toml`](./wrangler.toml) 已将 `notes.goho.eu.org` 声明为 Worker Custom Domain，并设置 `workers_dev = false`。首次 GitHub 部署时 Wrangler 会为该 hostname 配置 Worker Custom Domain；Cloudflare 负责对应的 DNS 记录和 TLS 证书。不要额外添加指向 `workers.dev` 的 CNAME，也不要把域名放进 Secret。
 
-如果绑定自定义域名，请在 Cloudflare Dashboard 为该 Worker 配置 Custom Domain，并确认 DNS、HTTPS 和域名本身的费用/套餐。项目默认 `workers_dev = true`，因此不配置自定义域名也可以使用 `workers.dev`。
+如果希望先在控制台绑定，也可以按下面的路径操作：
+
+1. 打开 **Workers & Pages → cloudflare-private-notes → Settings → Domains & Routes**。
+2. 点击 **Add → Custom Domain**，填写 `notes.goho.eu.org` 并确认。
+3. 等待域名状态显示为 **Active/Ready**，再推送包含本仓库 `wrangler.toml` 的提交。
+
+本仓库选择 Wrangler 作为路由的唯一配置来源。使用控制台完成首次绑定后，仍应保留与它完全一致的 `[[routes]]` 配置；不要在 Dashboard 再添加另一条同 hostname 的普通 Route，也不要一边删除 TOML 路由、一边让 CI 继续执行 `wrangler deploy`。
+
+部署前检查：
+
+1. `goho.eu.org` 已在托管该域名的 Cloudflare 账号中添加为 Zone，且 Overview 显示 **Active**。如果 Zone 还未激活，先到域名注册商处将 Nameserver 改为 Cloudflare 显示的两台 Nameserver，并等待状态变为 Active。
+2. `notes.goho.eu.org` 没有与其他服务冲突的 DNS 记录。Custom Domain 创建时由 Cloudflare 配置所需记录；不要预先添加错误的 A、AAAA 或 CNAME。
+3. GitHub 仓库的 `production` Environment 中，`CLOUDFLARE_API_TOKEN` 所属账号与该 Zone、D1 数据库一致，并包含第 7 节列出的 Worker、D1 和 Custom Domain 管理权限。不要使用 Global API Key。
+4. 如果此前已经通过旧 `workers.dev` 地址使用应用，先在旧地址联网打开并确认所有笔记均已同步，或导出加密备份。浏览器会按 origin 隔离 IndexedDB、Cookie 和待同步队列；切换到 `notes.goho.eu.org` 后需要重新登录，旧域名 origin 中尚未同步的离线草稿不会自动迁移。此前发布的 Android/桌面安装包也固定使用旧 API 地址；由于本配置会关闭 `workers.dev`，旧安装包会失去连接。需要继续使用旧客户端时，先暂时保留 `workers_dev = true`，等新域名验证和新版客户端发布后再关闭。
+5. 确认 `wrangler.toml` 中的 `database_id`、`name` 与生产资源匹配，再推送 `main`。GitHub Actions 中的 **Deploy to Cloudflare** 绿色完成后，打开下面的地址检查证书和页面。
+
+检查 DNS、TLS 和 API：
+
+```powershell
+Resolve-DnsName notes.goho.eu.org
+curl.exe -I https://notes.goho.eu.org/
+curl.exe -i https://notes.goho.eu.org/api/auth/me
+```
+
+根页面应返回成功状态；未登录的 `/api/auth/me` 应返回 `401`，而不是 DNS 错误、TLS 错误或 `404`。刚绑定时 DNS 更新和证书签发可能需要等待，期间不要反复删除/重建域名；稍后重试并在 Cloudflare Worker 的 **Settings → Domains & Routes** 检查域名状态。确认可访问后，使用测试账号完成第 13 节的注册、同步与加密验证。
+
+该 hostname 由 Wrangler 配置管理，建议不要在 Dashboard 配一个不同域名或路由。若初次部署报告 Custom Domain 权限不足，先确认 `CLOUDFLARE_API_TOKEN` 具有第 7 节的 `Account / Workers Scripts / Edit` 且属于正确账号；再根据 Actions 的具体权限错误补充最小权限。此配置关闭了 `workers.dev` 默认入口，因此部署不会把该入口作为备用地址重新开放。
 
 ## 11. 可选：Cloudflare Workers Builds 连接 GitHub
 
@@ -408,7 +436,7 @@ pnpm run smoke
 测试已部署实例：
 
 ```powershell
-$env:BASE_URL = "https://cloudflare-private-notes.<你的-subdomain>.workers.dev"
+$env:BASE_URL = "https://notes.goho.eu.org"
 pnpm run smoke
 ```
 
@@ -456,7 +484,7 @@ git push origin main
 部署 `main` 成功后，用 HTTPS 打开 Worker 地址，例如：
 
 ```text
-https://cloudflare-private-notes.<你的-subdomain>.workers.dev
+https://notes.goho.eu.org
 ```
 
 项目会提供 `public/manifest.webmanifest`、应用图标和 `public/sw.js`。在支持 PWA 的浏览器中可以安装：
@@ -636,28 +664,34 @@ CI 每次从干净 runner 执行 `tauri android init`，所以 `src-tauri/gen/an
 
 ### 15.8 原生 API 地址和 Tauri HTTP 权限
 
-原生客户端构建时读取公开的 `VITE_NATIVE_API_BASE_URL`。默认值是：
+原生客户端构建时读取公开的 `VITE_NATIVE_API_BASE_URL`。生产默认值是：
 
 ```text
-https://cloudflare-private-notes.nanxunke.workers.dev
+https://notes.goho.eu.org
 ```
 
 可以在未提交的 `.env.local` 中覆盖：
 
 ```env
-VITE_NATIVE_API_BASE_URL=https://notes.example.com
+VITE_NATIVE_API_BASE_URL=https://notes.goho.eu.org
 ```
 
 也可以在 PowerShell 当前进程中设置后立即构建：
 
 ```powershell
-$env:VITE_NATIVE_API_BASE_URL = "https://notes.example.com"
+$env:VITE_NATIVE_API_BASE_URL = "https://notes.goho.eu.org"
 pnpm run app:build
 ```
 
 `VITE_*` 会被编译进客户端，**不是秘密变量**。不要放入 Cloudflare API Token、`AUTH_PEPPER`、主密码或任何私钥。浏览器运行时仍使用同源 `/api`，只有检测到 Tauri 运行时才使用该 API origin。
 
-GitHub Release 工作流优先读取仓库的 **Settings → Secrets and variables → Actions → Variables** 中的 `VITE_NATIVE_API_BASE_URL`；未设置时使用上面的默认 `workers.dev` 地址。自定义域名部署时应设置这个公开变量，并同步更新 Tauri HTTP allowlist。
+GitHub Release 工作流优先读取仓库的 **Settings → Secrets and variables → Actions → Variables** 中的 `VITE_NATIVE_API_BASE_URL`；未设置时使用上面的生产域名。建议显式新增一个 **Repository variable**（不是 Secret）：
+
+| Name | Value |
+| --- | --- |
+| `VITE_NATIVE_API_BASE_URL` | `https://notes.goho.eu.org` |
+
+这个值是公开 API 地址，不包含凭据。仓库默认配置和构建脚本已将 Tauri HTTP allowlist 与 CSP 限定到 `https://notes.goho.eu.org`。
 
 如果改用自定义 API 域名，必须同时修改 [`src-tauri/capabilities/default.json`](./src-tauri/capabilities/default.json) 的最小 HTTP allowlist，例如：
 
@@ -666,13 +700,15 @@ GitHub Release 工作流优先读取仓库的 **Settings → Secrets and variabl
   "identifier": "http:default",
   "allow": [
     {
-      "url": "https://notes.example.com/**"
+      "url": "https://notes.goho.eu.org/api/*"
     }
   ]
 }
 ```
 
-只添加你实际控制的 HTTPS origin，不要使用 `*`。修改 allowlist 后重新构建客户端。Tauri HTTP 插件负责原生 Cookie jar；客户端请求会清空不匹配的浏览器 `Origin`，因此不需要为了桌面/Android 客户端放宽 Worker CORS。Worker 的 CSRF、会话 Cookie、Origin 校验和用户 ID 权限隔离仍然有效。
+只添加你实际控制的 HTTPS origin，不要使用 `*`。自定义域名变更后需要重新构建客户端。Tauri HTTP 插件负责原生 Cookie jar；客户端请求会清空不匹配的浏览器 `Origin`，因此不需要为了桌面/Android 客户端放宽 Worker CORS。Worker 的 CSRF、会话 Cookie、Origin 校验和用户 ID 权限隔离仍然有效。
+
+发布的 APK/桌面安装包会把 API origin 编译进应用。网站切换域名后，已安装的旧版本仍可能连接旧 API 地址；确认新域名和 HTTPS 正常后，基于最新 `main` 创建一个**从未发布过的新 `app-v*` 标签**，等待 **Build Desktop and Android Apps** 完成，再安装新 Release。不要覆盖或复用旧标签。需要回滚时，同时恢复 Wrangler 域名配置并重新构建/发布客户端，单独回滚 Worker 不会改变已发布应用内的地址。
 
 ### 15.9 客户端验证清单
 

@@ -1,7 +1,7 @@
 import { authVerifierForLogin, createVaultCredentials, unwrapVaultKey } from "./crypto";
 import type { EncryptedEnvelope, PublicUser, SyncNote } from "./types";
 
-const DEFAULT_NATIVE_API_BASE_URL = "https://cloudflare-private-notes.nanxunke.workers.dev";
+const DEFAULT_NATIVE_API_BASE_URL = "https://notes.goho.eu.org";
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: unknown;

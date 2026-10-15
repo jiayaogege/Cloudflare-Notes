@@ -17,7 +17,7 @@ jobs:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     env:
-      VITE_NATIVE_API_BASE_URL: ${{ vars.VITE_NATIVE_API_BASE_URL || 'https://cloudflare-private-notes.nanxunke.workers.dev' }}
+      VITE_NATIVE_API_BASE_URL: ${{ vars.VITE_NATIVE_API_BASE_URL || 'https://notes.goho.eu.org' }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +81,7 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-24.04
     env:
-      VITE_NATIVE_API_BASE_URL: ${{ vars.VITE_NATIVE_API_BASE_URL || 'https://cloudflare-private-notes.nanxunke.workers.dev' }}
+      VITE_NATIVE_API_BASE_URL: ${{ vars.VITE_NATIVE_API_BASE_URL || 'https://notes.goho.eu.org' }}
       ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}

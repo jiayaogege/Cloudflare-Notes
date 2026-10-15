@@ -23,7 +23,7 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "connect-src": "ipc: http://ipc.localhost https://cloudflare-private-notes.nanxunke.workers.dev",
+        "connect-src": "ipc: http://ipc.localhost https://notes.goho.eu.org",
         "img-src": "'self' asset: http://asset.localhost blob: data:",
         "style-src": "'self' 'unsafe-inline'",
         "font-src": "'self' data:"
